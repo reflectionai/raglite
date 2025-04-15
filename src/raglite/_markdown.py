@@ -197,13 +197,41 @@ def parsed_pdf_to_markdown(pages: list[dict[str, Any]]) -> list[str]:  # noqa: C
 
 def document_to_markdown(doc_path: Path) -> str:
     """Convert any document to GitHub Flavored Markdown."""
+    # Define suffixes for plain text / code files that shouldn't be processed by pandoc or mdformat
+    plain_text_suffixes = {
+        ".md",
+        ".txt",
+        ".py",
+        ".js",
+        ".ts",
+        ".java",
+        ".c",
+        ".cpp",
+        ".h",
+        ".hpp",
+        ".cs",
+        ".go",
+        ".rb",
+        ".php",
+        ".html",
+        ".css",
+        ".xml",
+        ".json",
+        ".yaml",
+        ".yml",
+        ".sh",
+        ".bash",
+    }
+    processed_as_markdown = False
+
     # Convert the file's content to GitHub Flavored Markdown.
     if doc_path.suffix == ".pdf":
         # Parse the PDF with pdftext and convert it to Markdown.
         pages = dictionary_output(doc_path, sort=True, keep_chars=False)
         doc = "\n\n".join(parsed_pdf_to_markdown(pages))
-    elif doc_path.suffix == ".md":
-        # Read the Markdown file.
+        processed_as_markdown = True
+    elif doc_path.suffix in plain_text_suffixes:
+        # Read plain text/code files directly.
         doc = doc_path.read_text()
     else:
         try:
@@ -211,14 +239,22 @@ def document_to_markdown(doc_path: Path) -> str:
             import pypandoc
 
             doc = pypandoc.convert_file(doc_path, to="gfm")
+            processed_as_markdown = True  # Pandoc output is markdown
         except ModuleNotFoundError as error:
             error_message = (
-                "To convert files to Markdown with pandoc, please install the `pandoc` extra."
+                "To convert files to Markdown with pandoc, please install the `pandoc` extra.\n"
+                "For file: {doc_path}. Falling back to plain text reading."
             )
-            raise ModuleNotFoundError(error_message) from error
-        except RuntimeError:
-            # File format not supported, fall back to reading the text.
+            print(error_message.format(doc_path=doc_path))  # Inform user about fallback
+            # Fall back to reading the text if pandoc is not available
             doc = doc_path.read_text()
-    # Improve Markdown quality.
-    doc = mdformat.text(doc)
+            # raise ModuleNotFoundError(error_message) from error # Decide if error is better
+        except RuntimeError:
+            # File format not supported by pandoc, fall back to reading the text.
+            print(f"Pandoc could not convert {doc_path}. Falling back to plain text reading.")
+            doc = doc_path.read_text()
+
+    # Improve Markdown quality *only* if the content is actually Markdown.
+    if processed_as_markdown:
+        doc = mdformat.text(doc)
     return doc
